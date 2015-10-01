@@ -19,6 +19,7 @@ def test_run_cmd_live(protocol_fake):
     s.protocol = protocol_fake
 
     import multiprocessing
+    # Pipe ends (connection objects) get closed automatically.
     a,b = multiprocessing.Pipe()
 
     # Pass in one end of the pipe (a) to capture stdout.
