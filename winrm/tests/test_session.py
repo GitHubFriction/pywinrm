@@ -1,4 +1,4 @@
-from winrm import Session
+﻿from winrm import Session
 
 
 def test_run_cmd(protocol_fake):
@@ -8,6 +8,25 @@ def test_run_cmd(protocol_fake):
 
     r = s.run_cmd('ipconfig', ['/all'])
 
+    assert r.status_code == 0
+    assert 'Windows IP Configuration' in r.std_out
+    assert len(r.std_err) == 0
+
+
+def test_run_cmd_live(protocol_fake):
+    # TODO this test should cover __init__ method
+    s = Session('windows-host', auth=('john.smith', 'secret'))
+    s.protocol = protocol_fake
+
+    import multiprocessing
+    a,b = multiprocessing.Pipe()
+
+    # Pass in one end of the pipe (a) to capture stdout.
+    r = s.run_cmd('ipconfig', ['/all'], None, a)
+    
+    stream = ''.join(b.recv())
+    # Compare captured stdout_stream with stdout returned by function.
+    assert r.std_out == stream 
     assert r.status_code == 0
     assert 'Windows IP Configuration' in r.std_out
     assert len(r.std_err) == 0

@@ -1,4 +1,4 @@
-import base64
+﻿from base64 import b64decode
 from datetime import timedelta
 import uuid
 import xml.etree.ElementTree as ET
@@ -15,6 +15,13 @@ class Protocol(object):
     DEFAULT_TIMEOUT = 'PT60S'
     DEFAULT_MAX_ENV_SIZE = 153600
     DEFAULT_LOCALE = 'en-US'
+
+    # Search namespaced XML using custom dictionary with own prefixes.
+    NS = {'s': 'http://www.w3.org/2003/05/soap-envelope',
+          'a': 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
+          'w': 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd',
+          'rsp': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
+          'p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd'}
 
     def __init__(self, endpoint, transport='plaintext', username=None,
                  password=None, realm=None, service=None, keytab=None,
@@ -291,7 +298,8 @@ class Protocol(object):
         # TODO change assert into user-friendly exception
         assert uuid.UUID(relates_to.replace('uuid:', '')) == message_id
 
-    def get_command_output(self, shell_id, command_id):
+    def get_command_output(self, shell_id, command_id,
+                           stderr_stream=None, stdout_stream=None):
         """
         Get the Output of the given shell and command
         @param string shell_id: The shell id on the remote machine.
@@ -305,15 +313,18 @@ class Protocol(object):
         #   the console.
         """
         stdout_buffer, stderr_buffer = [], []
-        command_done = False
-        while not command_done:
-            stdout, stderr, return_code, command_done = \
-                self._raw_get_command_output(shell_id, command_id)
+        exit_code = None
+        while exit_code is None:
+            stdout, stderr, exit_code = \
+                self._raw_get_command_output(shell_id, command_id,
+                                             stderr_stream, stdout_stream)
             stdout_buffer.append(stdout)
             stderr_buffer.append(stderr)
-        return ''.join(stdout_buffer), ''.join(stderr_buffer), return_code
 
-    def _raw_get_command_output(self, shell_id, command_id):
+        return ''.join(stdout_buffer), ''.join(stderr_buffer), exit_code
+
+    def _raw_get_command_output(self, shell_id, command_id,
+                                stderr_stream=None, stdout_stream=None):
         rq = {'env:Envelope': self._get_soap_header(
             resource_uri='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',  # NOQA
             action='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive',  # NOQA
@@ -327,18 +338,25 @@ class Protocol(object):
 
         rs = self.send_message(xmltodict.unparse(rq))
         root = ET.fromstring(rs)
-        stream_nodes = [node for node in root.findall('.//*')
-                        if node.tag.endswith('Stream')]
-        stdout = stderr = ''
-        return_code = -1
-        for stream_node in stream_nodes:
-            if stream_node.text:
-                if stream_node.attrib['Name'] == 'stdout':
-                    stdout += str(base64.b64decode(
-                        stream_node.text.encode('ascii')))
-                elif stream_node.attrib['Name'] == 'stderr':
-                    stderr += str(base64.b64decode(
-                        stream_node.text.encode('ascii')))
+
+        # Select all rsp:stream elements in the entire XML tree,
+        # which have a "name" attribute with a value of "stderr".
+        stderr_nodes = \
+            root.findall('.//rsp:Stream[@Name="stderr"]', self.NS) or []
+
+        # Base64 decode stderr nodes.
+        stderr_nodes = [b64decode(node.text.encode('ascii'))
+                        for node in stderr_nodes if node.text]
+        if stderr_stream:
+            stderr_stream.send(stderr_nodes)
+
+        stdout_nodes = \
+            root.findall('.//rsp:Stream[@Name="stdout"]', self.NS) or []
+        # Base64 decode stdout nodes.
+        stdout_nodes = [b64decode(node.text.encode('ascii'))
+                        for node in stdout_nodes if node.text]
+        if stdout_stream:
+            stdout_stream.send(stdout_nodes)
 
         # We may need to get additional output if the stream has not finished.
         # The CommandState will change from Running to Done like so:
@@ -349,11 +367,19 @@ class Protocol(object):
         #   <rsp:CommandState CommandId="..." State="http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done">  # NOQA
         #     <rsp:ExitCode>0</rsp:ExitCode>
         #   </rsp:CommandState>
-        command_done = len([node for node in root.findall('.//*')
-                           if node.get('State', '').endswith(
-                            'CommandState/Done')]) == 1
-        if command_done:
-            return_code = int(next(node for node in root.findall('.//*')
-                                   if node.tag.endswith('ExitCode')).text)
+        exit_node = root.find('.//rsp:ExitCode', self.NS)
+        exit_code = None
+        # If rsp:exitnode is present, the command finished.
+        # Can't use "if exit_node"!
+        if exit_node is not None:
+            # Use error/exit code to indicate command completion.
+            exit_code = int(exit_node.text)
+            # Close pipe end(s), which will indicate to the
+            # receiving end(s) that the stream(s) ended.
+            # (EOFError will be raised on the receiving end.)
+            if stderr_stream:
+                stderr_stream.close()
+            if stdout_stream:
+                stdout_stream.close()
 
-        return stdout, stderr, return_code, command_done
+        return ''.join(stdout_nodes), ''.join(stderr_nodes), exit_code

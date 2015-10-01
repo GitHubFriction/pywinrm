@@ -1,4 +1,4 @@
-import re
+﻿import re
 import base64
 import xml.etree.ElementTree as ET
 
@@ -24,23 +24,26 @@ class Session(object):
         self.protocol = Protocol(self.url, transport=transport,
                                  username=username, password=password)
 
-    def run_cmd(self, command, args=()):
+    def run_cmd(self, command, args=(), stderr_stream=None,
+                stdout_stream=None):
         # TODO optimize perf. Do not call open/close shell every time
         shell_id = self.protocol.open_shell()
         command_id = self.protocol.run_command(shell_id, command, args)
-        rs = Response(self.protocol.get_command_output(shell_id, command_id))
+        rs = Response(self.protocol.get_command_output(
+            shell_id, command_id, stderr_stream, stdout_stream))
         self.protocol.cleanup_command(shell_id, command_id)
         self.protocol.close_shell(shell_id)
         return rs
 
-    def run_ps(self, script):
+    def run_ps(self, script, stderr_stream=None, stdout_stream=None):
         """base64 encodes a Powershell script and executes the powershell
         encoded script command
         """
 
         # must use utf16 little endian on windows
         base64_script = base64.b64encode(script.encode("utf_16_le"))
-        rs = self.run_cmd("powershell -encodedcommand %s" % (base64_script))
+        rs = self.run_cmd("powershell -encodedcommand %s" % (base64_script),
+                          (), stderr_stream, stdout_stream)
         if len(rs.std_err):
             # if there was an error message, clean it it up and make it human
             # readable
