@@ -46,20 +46,17 @@ def test_get_command_output(protocol_real):
 def test_get_command_output_live(protocol_real):
     import multiprocessing
     # Pipe ends (connection objects) get closed automatically.
-    a,b = multiprocessing.Pipe()
+    a, b = multiprocessing.Pipe()
 
     shell_id = protocol_real.open_shell()
     command_id = protocol_real.run_command(shell_id, 'ipconfig', ['/all'])
-    std_out, std_err, status_code = protocol_real.get_command_output(
-        shell_id, command_id)
-
     # Pass in one end of the pipe (a) to capture stdout.
-    r = s.run_cmd('ipconfig', ['/all'], None, a)
-    
+    std_out, std_err, status_code = protocol_real.get_command_output(
+        shell_id, command_id, None, a)
+
     stream = ''.join(b.recv())
     # Compare captured stdout_stream with stdout returned by function.
-    assert r.std_out == stream 
-
+    assert std_out == stream
     assert status_code == 0
     # Note: The Windows display languge must be set to English.
     assert 'Windows IP Configuration' in std_out
