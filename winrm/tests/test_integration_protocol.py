@@ -1,4 +1,4 @@
-import re
+﻿import re
 import pytest
 xfail = pytest.mark.xfail
 
@@ -35,6 +35,7 @@ def test_get_command_output(protocol_real):
         shell_id, command_id)
 
     assert status_code == 0
+    # Note: The Windows display languge must be set to English.
     assert 'Windows IP Configuration' in std_out
     assert len(std_err) == 0
 
