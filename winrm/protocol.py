@@ -21,7 +21,8 @@ class Protocol(object):
           'a': 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
           'w': 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd',
           'rsp': 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell',
-          'p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd'}
+          'p': 'http://schemas.microsoft.com/wbem/wsman/1/wsman.xsd',
+          'xmlns': 'http://schemas.microsoft.com/powershell/2004/04'}
 
     def __init__(self, endpoint, transport='plaintext', username=None,
                  password=None, realm=None, service=None, keytab=None,
